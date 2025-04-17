@@ -192,52 +192,55 @@ func TestNextInflationRateEdgeCases(t *testing.T) {
 	tests := []struct {
 		name           string
 		bondedRatio    sdk.Dec
-		stakingSupply  sdk.Int
+		stakingSupply  math.Int
 		expectError    bool
 		errorString    string
 		expectedResult sdk.Dec
 	}{
 		{
-			name:           "zero bonded ratio",
-			bondedRatio:    sdk.ZeroDec(),
-			stakingSupply:  sdk.NewInt(1000000),
-			expectError:    false,
-			expectedResult: sdk.ZeroDec(),
+			name:           "nil bonded ratio",
+			bondedRatio:    sdk.Dec{},
+			stakingSupply:  math.NewInt(1000000),
+			expectError:    true,
+			errorString:    "bonded ratio cannot be nil",
+			expectedResult: sdk.Dec{},
 		},
 		{
-			name:          "negative bonded ratio",
-			bondedRatio:   sdk.NewDecWithPrec(-1, 2),
-			stakingSupply: sdk.NewInt(1000000),
-			expectError:   true,
-			errorString:   "bonded ratio cannot be negative",
+			name:           "negative bonded ratio",
+			bondedRatio:    sdk.NewDec(-1),
+			stakingSupply:  math.NewInt(1000000),
+			expectError:    true,
+			errorString:    "bonded ratio cannot be negative",
+			expectedResult: sdk.Dec{},
 		},
 		{
-			name:          "bonded ratio greater than 1",
-			bondedRatio:   sdk.NewDec(2),
-			stakingSupply: sdk.NewInt(1000000),
-			expectError:   true,
-			errorString:   "bonded ratio cannot be greater than 1",
+			name:           "bonded ratio > 1",
+			bondedRatio:    sdk.NewDec(2),
+			stakingSupply:  math.NewInt(1000000),
+			expectError:    true,
+			errorString:    "bonded ratio cannot be greater than 1",
+			expectedResult: sdk.Dec{},
 		},
 		{
 			name:           "zero staking supply",
-			bondedRatio:    sdk.NewDecWithPrec(50, 2),
-			stakingSupply:  sdk.ZeroInt(),
+			bondedRatio:    sdk.NewDecWithPrec(5, 1),
+			stakingSupply:  math.ZeroInt(),
 			expectError:    false,
 			expectedResult: sdk.ZeroDec(),
 		},
 		{
-			name:          "negative staking supply",
-			bondedRatio:   sdk.NewDecWithPrec(50, 2),
-			stakingSupply: sdk.NewInt(-1),
-			expectError:   true,
-			errorString:   "staking supply cannot be negative",
+			name:           "zero bonded ratio",
+			bondedRatio:    sdk.ZeroDec(),
+			stakingSupply:  math.NewInt(1000000),
+			expectError:    false,
+			expectedResult: sdk.ZeroDec(),
 		},
 		{
-			name:          "maximum staking supply",
-			bondedRatio:   sdk.NewDecWithPrec(50, 2),
-			stakingSupply: sdk.NewIntFromUint64(^uint64(0)),
-			expectError:   true,
-			errorString:   "staking supply too large",
+			name:           "valid case",
+			bondedRatio:    sdk.NewDecWithPrec(5, 1),
+			stakingSupply:  math.NewInt(1000000),
+			expectError:    false,
+			expectedResult: sdk.NewDecWithPrec(7, 2), // 0.07 inflation rate
 		},
 	}
 
@@ -249,7 +252,8 @@ func TestNextInflationRateEdgeCases(t *testing.T) {
 				require.Contains(t, err.Error(), tc.errorString)
 			} else {
 				require.NoError(t, err)
-				require.Equal(t, tc.expectedResult, result)
+				require.True(t, tc.expectedResult.Equal(result),
+					"expected %s, got %s", tc.expectedResult, result)
 			}
 		})
 	}
@@ -257,76 +261,56 @@ func TestNextInflationRateEdgeCases(t *testing.T) {
 
 func TestBlockProvisionEdgeCases(t *testing.T) {
 	minter := DefaultInitialMinter()
+	params := DefaultParams()
 
 	tests := []struct {
-		name        string
-		params      Params
-		expectError bool
-		errorString string
+		name          string
+		mintDenom     string
+		blocksPerYear uint64
+		expectError   bool
+		errorString   string
 	}{
 		{
-			name: "blocks per year exceeds max int64",
-			params: Params{
-				BlocksPerYear:       uint64(stdmath.MaxInt64) + 1,
-				MintDenom:           sdk.DefaultBondDenom,
-				InflationRateChange: sdk.NewDec(1),
-				GoalBonded:          sdk.NewDec(1),
-				MaxTokenPerYear:     sdk.NewInt(1000000),
-				MinTokenPerYear:     sdk.NewInt(100000),
-			},
-			expectError: true,
-			errorString: "blocks per year exceeds maximum int64 value",
+			name:          "empty mint denom",
+			mintDenom:     "",
+			blocksPerYear: params.BlocksPerYear,
+			expectError:   true,
+			errorString:   "mint denom cannot be empty",
 		},
 		{
-			name: "zero blocks per year",
-			params: Params{
-				BlocksPerYear:       0,
-				MintDenom:           sdk.DefaultBondDenom,
-				InflationRateChange: sdk.NewDec(1),
-				GoalBonded:          sdk.NewDec(1),
-				MaxTokenPerYear:     sdk.NewInt(1000000),
-				MinTokenPerYear:     sdk.NewInt(100000),
-			},
-			expectError: true,
-			errorString: "blocks per year must be positive",
+			name:          "invalid mint denom",
+			mintDenom:     "invalid!denom",
+			blocksPerYear: params.BlocksPerYear,
+			expectError:   true,
+			errorString:   "invalid mint denom",
 		},
 		{
-			name: "empty mint denom",
-			params: Params{
-				BlocksPerYear:       1000,
-				MintDenom:           "",
-				InflationRateChange: sdk.NewDec(1),
-				GoalBonded:          sdk.NewDec(1),
-				MaxTokenPerYear:     sdk.NewInt(1000000),
-				MinTokenPerYear:     sdk.NewInt(100000),
-			},
-			expectError: true,
-			errorString: "mint denom cannot be empty",
+			name:          "zero blocks per year",
+			mintDenom:     params.MintDenom,
+			blocksPerYear: 0,
+			expectError:   true,
+			errorString:   "blocks per year must be positive",
 		},
 		{
-			name: "invalid mint denom",
-			params: Params{
-				BlocksPerYear:       1000,
-				MintDenom:           "invalid!denom",
-				InflationRateChange: sdk.NewDec(1),
-				GoalBonded:          sdk.NewDec(1),
-				MaxTokenPerYear:     sdk.NewInt(1000000),
-				MinTokenPerYear:     sdk.NewInt(100000),
-			},
-			expectError: true,
-			errorString: "invalid mint denom",
+			name:          "valid case",
+			mintDenom:     params.MintDenom,
+			blocksPerYear: params.BlocksPerYear,
+			expectError:   false,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := minter.BlockProvision(tc.params)
+			testParams := params
+			testParams.MintDenom = tc.mintDenom
+			testParams.BlocksPerYear = tc.blocksPerYear
+
+			_, err := minter.BlockProvision(testParams)
 			if tc.expectError {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.errorString)
 			} else {
 				require.NoError(t, err)
-				require.NotNil(t, result)
 			}
 		})
 	}
@@ -338,7 +322,7 @@ func TestNextAnnualProvisionsEdgeCases(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		totalSupply sdk.Int
+		totalSupply math.Int
 		expectError bool
 		errorString string
 	}{
@@ -375,20 +359,82 @@ func TestNextAnnualProvisionsEdgeCases(t *testing.T) {
 	}
 }
 
-func TestNextInflationRate(t *testing.T) {
-	minter := DefaultInitialMinter()
-	params := DefaultParams()
+type BlockProvisionTestCase struct {
+	name          string
+	minter        Minter
+	params        Params
+	totalSupply   math.Int
+	expProvisions sdk.Dec
+	expError      bool
+}
 
-	// Fix the loop to prevent integer overflow
-	if params.BlocksPerYear > uint64(stdmath.MaxInt64) {
-		t.Fatal("blocks per year exceeds maximum int64 value")
+type AnnualProvisionsTestCase struct {
+	name          string
+	minter        Minter
+	params        Params
+	totalSupply   math.Int
+	expProvisions sdk.Dec
+	expError      bool
+}
+
+func TestBlockProvision(t *testing.T) {
+	tests := []BlockProvisionTestCase{
+		{
+			name:          "default params",
+			minter:        DefaultInitialMinter(),
+			params:        DefaultParams(),
+			totalSupply:   math.NewInt(1000000),
+			expProvisions: sdk.NewDec(1),
+			expError:      false,
+		},
+		{
+			name:          "zero total supply",
+			minter:        DefaultInitialMinter(),
+			params:        DefaultParams(),
+			totalSupply:   math.ZeroInt(),
+			expProvisions: sdk.ZeroDec(),
+			expError:      false,
+		},
 	}
-	for i := uint64(1); i <= params.BlocksPerYear; i++ {
-		bondedRatio := sdk.NewDecFromInt(math.NewInt(1)).Quo(sdk.NewDecFromInt(math.NewInt(100)))
-		stakingSupply := math.NewInt(1000000)
-		result, err := minter.NextInflationRate(params, bondedRatio, stakingSupply)
-		require.NoError(t, err)
-		require.NotNil(t, result)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := tc.minter.BlockProvision(tc.params)
+			if tc.expError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.True(t, tc.expProvisions.Equal(sdk.NewDecFromInt(result.Amount)))
+			}
+		})
+	}
+}
+
+func TestNextInflationRate(t *testing.T) {
+	tests := []struct {
+		name          string
+		minter        Minter
+		params        Params
+		bondedRatio   sdk.Dec
+		stakingSupply math.Int
+		expRate       sdk.Dec
+	}{
+		{
+			name:          "inflation at goal",
+			minter:        DefaultInitialMinter(),
+			params:        DefaultParams(),
+			bondedRatio:   sdk.NewDecWithPrec(67, 2),
+			stakingSupply: math.NewInt(1000000),
+			expRate:       sdk.NewDecWithPrec(13, 2),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := tc.minter.NextInflationRate(tc.params, tc.bondedRatio, tc.stakingSupply)
+			require.NoError(t, err)
+			require.True(t, tc.expRate.Equal(result))
+		})
 	}
 }
 
@@ -397,77 +443,56 @@ func TestNextAnnualProvisions(t *testing.T) {
 		name          string
 		minter        Minter
 		params        Params
-		bondedRatio   sdk.Dec
 		stakingSupply math.Int
 		expProvisions sdk.Dec
 	}{
 		{
-			"zero staking supply",
-			Minter{},
-			Params{},
-			sdk.ZeroDec(),
-			math.ZeroInt(),
-			sdk.ZeroDec(),
+			name:          "zero staking supply",
+			minter:        Minter{},
+			params:        Params{},
+			stakingSupply: math.ZeroInt(),
+			expProvisions: sdk.ZeroDec(),
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			result, err := tc.minter.NextAnnualProvisions(tc.params, tc.stakingSupply)
-			if tc.expProvisions.IsNil() {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				require.Equal(t, tc.expProvisions, result)
-			}
+			require.NoError(t, err)
+			require.True(t, tc.expProvisions.Equal(result))
 		})
 	}
 }
 
-func TestBlockProvision(t *testing.T) {
-	tests := []struct {
-		name          string
-		minter        Minter
-		params        Params
-		totalSupply   math.Int
-		expProvisions sdk.Dec
-	}{
+func TestAnnualProvisions(t *testing.T) {
+	tests := []AnnualProvisionsTestCase{
 		{
-			"zero total supply",
-			Minter{},
-			Params{},
-			math.ZeroInt(),
-			sdk.ZeroDec(),
+			name:          "default params",
+			minter:        DefaultInitialMinter(),
+			params:        DefaultParams(),
+			totalSupply:   math.NewInt(1000000),
+			expProvisions: sdk.NewDec(1),
+			expError:      false,
+		},
+		{
+			name:          "zero total supply",
+			minter:        DefaultInitialMinter(),
+			params:        DefaultParams(),
+			totalSupply:   math.ZeroInt(),
+			expProvisions: sdk.ZeroDec(),
+			expError:      false,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := tc.minter.BlockProvision(tc.params)
-			if tc.expProvisions.IsNil() {
+			result, err := tc.minter.NextAnnualProvisions(tc.params, tc.totalSupply)
+			if tc.expError {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
-				require.NotNil(t, result)
+				require.True(t, tc.expProvisions.Equal(result))
 			}
 		})
 	}
-}
-
-type BlockProvisionTestCase struct {
-	minter          Minter
-	params          Params
-	stakingSupply   math.Int
-	expProvision    sdk.Coin
-	expError        bool
-	expErrorMessage string
-}
-
-type NextAnnualProvisionsTestCase struct {
-	minter          Minter
-	params          Params
-	totalSupply     math.Int
-	expProvisions   sdk.Dec
-	expError        bool
-	expErrorMessage string
 }

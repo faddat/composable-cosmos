@@ -53,19 +53,37 @@ func ValidateMinter(minter Minter) error {
 // NextInflationRate returns the new inflation rate for the next hour.
 func (m Minter) NextInflationRate(params Params, bondedRatio sdk.Dec, totalStakingSupply math.Int) (sdk.Dec, error) {
 	// Validate inputs
+	if params.InflationRateChange.IsNil() {
+		return sdk.Dec{}, fmt.Errorf("inflation rate change cannot be nil")
+	}
+	if params.InflationRateChange.IsNegative() {
+		return sdk.Dec{}, fmt.Errorf("inflation rate change cannot be negative")
+	}
 	if bondedRatio.IsNil() {
 		return sdk.Dec{}, fmt.Errorf("bonded ratio cannot be nil")
+	}
+	if bondedRatio.IsNegative() {
+		return sdk.Dec{}, fmt.Errorf("bonded ratio cannot be negative")
+	}
+	if bondedRatio.GT(sdk.OneDec()) {
+		return sdk.Dec{}, fmt.Errorf("bonded ratio cannot be greater than 1")
 	}
 	if totalStakingSupply.IsNil() {
 		return sdk.Dec{}, fmt.Errorf("total staking supply cannot be nil")
 	}
-	if params.GoalBonded.IsZero() {
-		return sdk.Dec{}, fmt.Errorf("goal bonded ratio cannot be zero")
+	if totalStakingSupply.IsNegative() {
+		return sdk.Dec{}, fmt.Errorf("staking supply cannot be negative")
+	}
+	if totalStakingSupply.GT(sdk.NewIntFromUint64(stdmath.MaxUint64)) {
+		return sdk.Dec{}, fmt.Errorf("staking supply too large")
 	}
 
-	totalStakingSupplyDec := sdk.NewDecFromInt(totalStakingSupply)
-	if totalStakingSupplyDec.LT(math.LegacySmallestDec()) {
-		return m.Inflation, nil // assert if totalStakingSupplyDec = 0
+	if bondedRatio.IsZero() {
+		return sdk.ZeroDec(), nil
+	}
+
+	if totalStakingSupply.IsZero() {
+		return sdk.ZeroDec(), nil
 	}
 
 	// Ensure BlocksPerYear can be safely converted to int64
@@ -89,7 +107,7 @@ func (m Minter) NextInflationRate(params Params, bondedRatio sdk.Dec, totalStaki
 
 	// Prevent division by zero
 	if params.BlocksPerYear == 0 {
-		return sdk.Dec{}, fmt.Errorf("blocks per year cannot be zero")
+		return sdk.Dec{}, fmt.Errorf("blocks per year must be positive")
 	}
 
 	inflationRateChange := inflationRateChangePerYear.Quo(sdk.NewDec(int64(params.BlocksPerYear)))
@@ -98,12 +116,12 @@ func (m Minter) NextInflationRate(params Params, bondedRatio sdk.Dec, totalStaki
 	inflation := m.Inflation.Add(inflationRateChange) // note inflationRateChange may be negative
 
 	// Calculate min/max inflation bounds
-	if totalStakingSupplyDec.IsZero() {
-		return sdk.Dec{}, fmt.Errorf("total staking supply cannot be zero")
+	if totalStakingSupply.IsZero() {
+		return sdk.ZeroDec(), nil
 	}
 
-	inflationMax := sdk.NewDecFromInt(params.MaxTokenPerYear).Quo(totalStakingSupplyDec)
-	inflationMin := sdk.NewDecFromInt(params.MinTokenPerYear).Quo(totalStakingSupplyDec)
+	inflationMax := sdk.NewDecFromInt(params.MaxTokenPerYear).Quo(sdk.NewDecFromInt(totalStakingSupply))
+	inflationMin := sdk.NewDecFromInt(params.MinTokenPerYear).Quo(sdk.NewDecFromInt(totalStakingSupply))
 
 	// Validate the calculated inflation bounds
 	if inflationMax.IsNil() || inflationMin.IsNil() {
@@ -126,21 +144,42 @@ func (m Minter) NextAnnualProvisions(_ Params, totalSupply math.Int) (sdk.Dec, e
 	if totalSupply.IsNil() {
 		return sdk.Dec{}, fmt.Errorf("total supply cannot be nil")
 	}
+	if totalSupply.IsNegative() {
+		return sdk.Dec{}, fmt.Errorf("total supply cannot be negative")
+	}
+	if totalSupply.GT(sdk.NewIntFromUint64(stdmath.MaxUint64)) {
+		return sdk.Dec{}, fmt.Errorf("total supply too large")
+	}
 	if m.Inflation.IsNil() {
 		return sdk.Dec{}, fmt.Errorf("inflation rate cannot be nil")
 	}
+
+	if totalSupply.IsZero() {
+		return sdk.ZeroDec(), nil
+	}
+
 	return m.Inflation.MulInt(totalSupply), nil
 }
 
 // BlockProvision returns the provisions for a block based on the annual
 // provisions rate.
 func (m Minter) BlockProvision(params Params) (sdk.Coin, error) {
+	// Validate inputs
+	if m.AnnualProvisions.IsNegative() {
+		return sdk.Coin{}, fmt.Errorf("annual provisions cannot be negative")
+	}
+	if params.MintDenom == "" {
+		return sdk.Coin{}, fmt.Errorf("mint denom cannot be empty")
+	}
+	if err := sdk.ValidateDenom(params.MintDenom); err != nil {
+		return sdk.Coin{}, fmt.Errorf("invalid mint denom: %w", err)
+	}
 	// Ensure BlocksPerYear can be safely converted to int64
 	if params.BlocksPerYear > uint64(stdmath.MaxInt64) {
 		return sdk.Coin{}, fmt.Errorf("blocks per year exceeds maximum int64 value")
 	}
 	if params.BlocksPerYear == 0 {
-		return sdk.Coin{}, fmt.Errorf("blocks per year cannot be zero")
+		return sdk.Coin{}, fmt.Errorf("blocks per year must be positive")
 	}
 	if m.AnnualProvisions.IsNil() {
 		return sdk.Coin{}, fmt.Errorf("annual provisions cannot be nil")
@@ -156,6 +195,13 @@ func (m Minter) BlockProvision(params Params) (sdk.Coin, error) {
 
 // CalculateInflationRate calculates the inflation rate for the current period
 func (m Minter) CalculateInflationRate(params Params) (sdk.Dec, error) {
+	// Validate inputs
+	if params.InflationRateChange.IsNil() {
+		return sdk.Dec{}, fmt.Errorf("inflation rate change cannot be nil")
+	}
+	if params.InflationRateChange.IsNegative() {
+		return sdk.Dec{}, fmt.Errorf("inflation rate change cannot be negative")
+	}
 	// Ensure BlocksPerYear can be safely converted to int64
 	if params.BlocksPerYear > uint64(stdmath.MaxInt64) {
 		return sdk.Dec{}, fmt.Errorf("blocks per year exceeds maximum int64 value")
