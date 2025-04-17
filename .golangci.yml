@@ -57,8 +57,6 @@ formatters:
   enable:
     - gofumpt
   settings:
-    gofumpt:
-      module-path: github.com/notional-labs/composable-centauri
       extra-rules: true
   exclusions:
     generated: lax

@@ -33,7 +33,7 @@ func (k msgServer) Delegate(goCtx context.Context, msg *types.MsgDelegate) (*typ
 
 func (k msgServer) BeginRedelegate(goCtx context.Context, msg *types.MsgBeginRedelegate) (*types.MsgBeginRedelegateResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	params := k.Keeper.Stakingmiddleware.GetParams(ctx)
+	params := k.Stakingmiddleware.GetParams(ctx)
 	height := ctx.BlockHeight()
 	epoch_progress_block_number := (height % int64(params.BlocksPerEpoch))
 	if epoch_progress_block_number > int64(params.AllowUnbondAfterEpochProgressBlockNumber) || epoch_progress_block_number == 0 {
@@ -44,7 +44,7 @@ func (k msgServer) BeginRedelegate(goCtx context.Context, msg *types.MsgBeginRed
 
 func (k msgServer) Undelegate(goCtx context.Context, msg *types.MsgUndelegate) (*types.MsgUndelegateResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	params := k.Keeper.Stakingmiddleware.GetParams(ctx)
+	params := k.Stakingmiddleware.GetParams(ctx)
 	height := ctx.BlockHeight()
 	epoch_progress_block_number := (height % int64(params.BlocksPerEpoch))
 	if epoch_progress_block_number > int64(params.AllowUnbondAfterEpochProgressBlockNumber) || epoch_progress_block_number == 0 {
