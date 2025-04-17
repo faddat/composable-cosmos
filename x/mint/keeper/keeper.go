@@ -149,6 +149,43 @@ func (k Keeper) MintCoins(ctx sdk.Context, newCoins sdk.Coins) error {
 	return k.bankKeeper.MintCoins(ctx, types.ModuleName, newCoins)
 }
 
+// GetProvisionsFromBlock returns the provisions for a block based on the mint params
+func (k Keeper) GetProvisionsFromBlock(ctx sdk.Context) (sdk.Coin, error) {
+	minter := k.GetMinter(ctx)
+	params := k.GetParams(ctx)
+
+	// BlockProvisionWithCheck already includes the check for BlocksPerYear
+	return k.BlockProvisionWithCheck(ctx, minter, params)
+}
+
+// BeginBlocker mints new tokens for the previous block.
+func (k Keeper) BeginBlocker(ctx sdk.Context) {
+	provisions, err := k.GetProvisionsFromBlock(ctx)
+	if err != nil {
+		panic(fmt.Sprintf("failed to get provisions from block: %v", err))
+	}
+
+	err = k.MintCoins(ctx, sdk.NewCoins(provisions))
+	if err != nil {
+		panic(fmt.Sprintf("failed to mint coins: %v", err))
+	}
+
+	// send the minted coins to the fee collector account
+	err = k.DistributeMintedCoin(ctx, provisions)
+	if err != nil {
+		panic(fmt.Sprintf("failed to distribute minted coins: %v", err))
+	}
+}
+
+// DistributeMintedCoin implements the distribution of minted coins to the fee collector account
+func (k Keeper) DistributeMintedCoin(ctx sdk.Context, mintedCoin sdk.Coin) error {
+	if mintedCoin.IsZero() {
+		return nil
+	}
+
+	return k.bankKeeper.SendCoinsFromModuleToModule(ctx, types.ModuleName, k.feeCollectorName, sdk.NewCoins(mintedCoin))
+}
+
 // AddCollectedFees implements an alias call to the underlying supply keeper's
 // AddCollectedFees to be used in BeginBlocker.
 func (k Keeper) AddCollectedFees(ctx sdk.Context, fees sdk.Coins) error {

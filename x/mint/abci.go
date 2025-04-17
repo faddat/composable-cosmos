@@ -22,15 +22,24 @@ func BeginBlocker(ctx sdk.Context, k keeper.Keeper, ic types.InflationCalculatio
 	totalStakingSupply := k.StakingTokenSupply(ctx)
 	bondedRatio := k.BondedRatio(ctx)
 	minter.Inflation = ic(ctx, minter, params, bondedRatio, totalStakingSupply)
-	minter.AnnualProvisions = minter.NextAnnualProvisions(params, totalStakingSupply)
+	annualProvisions, err := minter.NextAnnualProvisions(params, totalStakingSupply)
+	if err != nil {
+		k.Logger(ctx).Error("failed to calculate annual provisions", "error", err)
+		return
+	}
+	minter.AnnualProvisions = annualProvisions
 	k.SetMinter(ctx, minter)
 
 	// calculate how many we would mint, but we dont mint them, we take them from the prefunded account
-	mintedCoin := minter.BlockProvision(params)
+	mintedCoin, err := minter.BlockProvision(params)
+	if err != nil {
+		k.Logger(ctx).Error("failed to calculate block provision", "error", err)
+		return
+	}
 	mintedCoins := sdk.NewCoins(mintedCoin)
 
 	// send the minted coins to the fee collector account
-	err := k.AddCollectedFees(ctx, mintedCoins)
+	err = k.AddCollectedFees(ctx, mintedCoins)
 	if err != nil {
 		k.Logger(ctx).Info("Not enough incentive tokens in the mint pool to distribute")
 	}

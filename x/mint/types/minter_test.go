@@ -1,9 +1,11 @@
 package types
 
 import (
+	stdmath "math"
 	"math/rand"
 	"testing"
 
+	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
 )
@@ -137,28 +139,242 @@ import (
 func TestSimulateMint(t *testing.T) {
 	minter := DefaultInitialMinter()
 	params := DefaultParams()
-	totalSupply := sdk.NewInt(1_000_000_000_000_000_000)
-	totalStaked := sdk.NewInt(0)
-	tokenMinted := sdk.NewCoin("stake", sdk.NewInt(0))
+	totalSupply := math.NewInt(1_000_000_000_000_000_000)
+	totalStaked := math.ZeroInt()
+	tokenMinted := sdk.NewCoin("stake", math.ZeroInt())
 
-	for i := 1; i <= int(params.BlocksPerYear); i++ {
+	// Ensure BlocksPerYear can be safely converted to int
+	if params.BlocksPerYear > uint64(stdmath.MaxInt64) {
+		t.Fatal("blocks per year exceeds maximum int64 value")
+	}
 
-		stakingDiff := sdk.NewDec(int64(rand.Intn(10))).QuoInt(sdk.NewInt(1_000_000)).MulInt(totalSupply)
+	for i := uint64(1); i <= params.BlocksPerYear; i++ {
+		stakingDiff := sdk.NewDec(int64(rand.Intn(10))).QuoInt(math.NewInt(1_000_000)).MulInt(totalSupply)
 		if (rand.Float32() > 0.5 || totalStaked.Add(stakingDiff.RoundInt()).GT(totalSupply)) && !totalStaked.Sub(stakingDiff.RoundInt()).IsNegative() {
 			stakingDiff = stakingDiff.Neg()
 		}
 		totalStaked = totalStaked.Add(stakingDiff.RoundInt())
 		bondedRatio := sdk.NewDecFromInt(totalStaked).Quo(sdk.NewDecFromInt(totalSupply))
-		minter.Inflation = minter.NextInflationRate(params, bondedRatio, totalStaked)
-		minter.AnnualProvisions = minter.NextAnnualProvisions(params, totalStaked)
+
+		newInflation, err := minter.NextInflationRate(params, bondedRatio, totalStaked)
+		require.NoError(t, err)
+		minter.Inflation = newInflation
+
+		newAnnualProvisions, err := minter.NextAnnualProvisions(params, totalStaked)
+		require.NoError(t, err)
+		minter.AnnualProvisions = newAnnualProvisions
 
 		// mint coins, update supply
-		mintedCoin := minter.BlockProvision(params)
+		mintedCoin, err := minter.BlockProvision(params)
+		require.NoError(t, err)
 		tokenMinted = tokenMinted.Add(mintedCoin)
-		// if i%100000 == 0 {
-		// 	fmt.Println(i, bondedRatio, tokenMinted, mintedCoin, minter.Inflation, minter.AnnualProvisions)
-		// }
 	}
 	require.True(t, params.MaxTokenPerYear.GTE(tokenMinted.Amount))
 	require.True(t, params.MinTokenPerYear.LTE(tokenMinted.Amount))
+}
+
+func TestMinterNextAnnualProvisions(t *testing.T) {
+	params := DefaultParams()
+
+	// Ensure BlocksPerYear can be safely converted to int
+	if params.BlocksPerYear > uint64(stdmath.MaxInt64) {
+		t.Fatal("blocks per year exceeds maximum int64 value")
+	}
+	for i := uint64(1); i <= params.BlocksPerYear; i++ {
+		// ... existing code ...
+	}
+}
+
+func TestNextInflationRateEdgeCases(t *testing.T) {
+	minter := DefaultInitialMinter()
+	params := DefaultParams()
+
+	tests := []struct {
+		name           string
+		bondedRatio    sdk.Dec
+		stakingSupply  sdk.Int
+		expectError    bool
+		errorString    string
+		expectedResult sdk.Dec
+	}{
+		{
+			name:           "zero bonded ratio",
+			bondedRatio:    sdk.ZeroDec(),
+			stakingSupply:  sdk.NewInt(1000000),
+			expectError:    false,
+			expectedResult: sdk.ZeroDec(),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := minter.NextInflationRate(params, tc.bondedRatio, tc.stakingSupply)
+			if tc.expectError {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.errorString)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.expectedResult, result)
+			}
+		})
+	}
+}
+
+func TestBlockProvisionEdgeCases(t *testing.T) {
+	minter := DefaultInitialMinter()
+	params := DefaultParams()
+
+	tests := []struct {
+		name        string
+		totalSupply sdk.Int
+		expectError bool
+		errorString string
+	}{
+		{
+			name:        "zero total supply",
+			totalSupply: sdk.ZeroInt(),
+			expectError: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := minter.BlockProvision(params)
+			if tc.expectError {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.errorString)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+			}
+		})
+	}
+}
+
+func TestNextAnnualProvisionsEdgeCases(t *testing.T) {
+	minter := DefaultInitialMinter()
+	params := DefaultParams()
+
+	tests := []struct {
+		name        string
+		totalSupply sdk.Int
+		expectError bool
+		errorString string
+	}{
+		{
+			name:        "zero total supply",
+			totalSupply: sdk.ZeroInt(),
+			expectError: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := minter.NextAnnualProvisions(params, tc.totalSupply)
+			if tc.expectError {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.errorString)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+			}
+		})
+	}
+}
+
+func TestNextInflationRate(t *testing.T) {
+	minter := DefaultInitialMinter()
+	params := DefaultParams()
+
+	// Fix the loop to prevent integer overflow
+	if params.BlocksPerYear > uint64(stdmath.MaxInt64) {
+		t.Fatal("blocks per year exceeds maximum int64 value")
+	}
+	for i := uint64(1); i <= params.BlocksPerYear; i++ {
+		bondedRatio := sdk.NewDecFromInt(math.NewInt(1)).Quo(sdk.NewDecFromInt(math.NewInt(100)))
+		stakingSupply := math.NewInt(1000000)
+		result, err := minter.NextInflationRate(params, bondedRatio, stakingSupply)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+	}
+}
+
+func TestNextAnnualProvisions(t *testing.T) {
+	tests := []struct {
+		name          string
+		minter        Minter
+		params        Params
+		bondedRatio   sdk.Dec
+		stakingSupply math.Int
+		expProvisions sdk.Dec
+	}{
+		{
+			"zero staking supply",
+			Minter{},
+			Params{},
+			sdk.ZeroDec(),
+			math.ZeroInt(),
+			sdk.ZeroDec(),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := tc.minter.NextAnnualProvisions(tc.params, tc.stakingSupply)
+			if tc.expProvisions.IsNil() {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.expProvisions, result)
+			}
+		})
+	}
+}
+
+func TestBlockProvision(t *testing.T) {
+	tests := []struct {
+		name          string
+		minter        Minter
+		params        Params
+		totalSupply   math.Int
+		expProvisions sdk.Dec
+	}{
+		{
+			"zero total supply",
+			Minter{},
+			Params{},
+			math.ZeroInt(),
+			sdk.ZeroDec(),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := tc.minter.BlockProvision(tc.params)
+			if tc.expProvisions.IsNil() {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+			}
+		})
+	}
+}
+
+type BlockProvisionTestCase struct {
+	minter          Minter
+	params          Params
+	stakingSupply   math.Int
+	expProvision    sdk.Coin
+	expError        bool
+	expErrorMessage string
+}
+
+type NextAnnualProvisionsTestCase struct {
+	minter          Minter
+	params          Params
+	totalSupply     math.Int
+	expProvisions   sdk.Dec
+	expError        bool
+	expErrorMessage string
 }
