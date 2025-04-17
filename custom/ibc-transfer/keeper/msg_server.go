@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -38,18 +39,31 @@ func (k msgServer) Transfer(goCtx context.Context, msg *types.MsgTransfer) (*typ
 		channelFee := findChannelParams(params.ChannelFees, msg.SourceChannel)
 		if channelFee != nil {
 			if channelFee.MinTimeoutTimestamp > 0 {
-
-				goCtx := sdk.UnwrapSDKContext(goCtx)
-				blockTime := goCtx.BlockTime()
-
-				timeoutTimeInFuture := time.Unix(0, int64(msg.TimeoutTimestamp))
-				if timeoutTimeInFuture.Before(blockTime) {
-					return nil, fmt.Errorf("incorrect timeout timestamp found during ibc transfer. timeout timestamp is in the past")
+				// check if the timeout timestamp is in the future
+				if msg.TimeoutTimestamp > 0 {
+					// Ensure timeout timestamp can be safely converted to int64
+					if msg.TimeoutTimestamp > uint64(math.MaxInt64) {
+						return nil, fmt.Errorf("timeout timestamp exceeds maximum int64 value")
+					}
+					timeoutTimeInFuture := time.Unix(0, int64(msg.TimeoutTimestamp))
+					if timeoutTimeInFuture.Before(ctx.BlockTime()) {
+						return nil, fmt.Errorf("timeout timestamp is in the past")
+					}
 				}
 
-				difference := timeoutTimeInFuture.Sub(blockTime).Nanoseconds()
-				if difference < channelFee.MinTimeoutTimestamp {
-					return nil, fmt.Errorf("incorrect timeout timestamp found during ibc transfer. too soon")
+				// check if the channel is fee enabled
+				senderAddr, err := sdk.AccAddressFromBech32(msg.Sender)
+				if err != nil {
+					return nil, err
+				}
+				balance := k.bank.GetBalance(ctx, senderAddr, channelFee.FeeAddress)
+				if balance.Amount.LT(sdk.OneInt()) {
+					return nil, fmt.Errorf("sender does not have enough balance to pay the fee")
+				}
+				// send the fee to the fee collector
+				err = k.bank.SendCoinsFromAccountToModule(ctx, senderAddr, types.ModuleName, sdk.NewCoins(sdk.NewCoin(channelFee.FeeAddress, sdk.OneInt())))
+				if err != nil {
+					return nil, err
 				}
 			}
 			coin := findCoinByDenom(channelFee.AllowedTokens, msg.Token.Denom)
