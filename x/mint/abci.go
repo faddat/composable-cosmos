@@ -1,6 +1,8 @@
 package mint
 
 import (
+	"fmt"
+	"runtime/debug"
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
@@ -12,6 +14,22 @@ import (
 
 // BeginBlocker mints new tokens for the previous block.
 func BeginBlocker(ctx sdk.Context, k keeper.Keeper, ic types.InflationCalculationFn) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Log the panic and stack trace
+			errMsg := fmt.Sprintf("panic in mint BeginBlocker: %v\n%s", r, string(debug.Stack()))
+			ctx.Logger().Error(errMsg)
+
+			// Emit an event for monitoring
+			ctx.EventManager().EmitEvent(
+				sdk.NewEvent(
+					types.EventTypeMint,
+					sdk.NewAttribute(types.AttributeKeyError, errMsg),
+				),
+			)
+		}
+	}()
+
 	defer telemetry.ModuleMeasureSince(types.ModuleName, time.Now(), telemetry.MetricKeyBeginBlocker)
 
 	// fetch stored minter & params
@@ -50,7 +68,10 @@ func BeginBlocker(ctx sdk.Context, k keeper.Keeper, ic types.InflationCalculatio
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			types.EventTypeReward,
+			types.EventTypeMint,
+			sdk.NewAttribute(types.AttributeKeyBondedRatio, bondedRatio.String()),
+			sdk.NewAttribute(types.AttributeKeyInflation, minter.Inflation.String()),
+			sdk.NewAttribute(types.AttributeKeyAnnualProvisions, minter.AnnualProvisions.String()),
 			sdk.NewAttribute(sdk.AttributeKeyAmount, mintedCoin.Amount.String()),
 		),
 	)

@@ -185,9 +185,16 @@ func (chain *TestChain) QueryProof(key []byte) ([]byte, clienttypes.Height) {
 	return chain.QueryProofAtHeight(key, chain.App.LastBlockHeight())
 }
 
-// QueryProof performs an abci query with the given key and returns the proto encoded merkle proof
+// QueryProofAtHeight performs an abci query with the given key and returns the proto encoded merkle proof
 // for the query and the height at which the proof will succeed on a tendermint verifier.
 func (chain *TestChain) QueryProofAtHeight(key []byte, height int64) ([]byte, clienttypes.Height) {
+	if height <= 0 {
+		panic("height must be positive")
+	}
+	if height-1 < 0 {
+		panic("height-1 must not be negative")
+	}
+
 	res := chain.App.Query(abci.RequestQuery{
 		Path:   fmt.Sprintf("store/%s/key", exported.StoreKey),
 		Height: height - 1,
@@ -207,10 +214,14 @@ func (chain *TestChain) QueryProofAtHeight(key []byte, height int64) ([]byte, cl
 	if res.Height < 0 {
 		panic("negative height not allowed")
 	}
+
 	// proof height + 1 is returned as the proof created corresponds to the height the proof
 	// was created in the IAVL tree. Tendermint and subsequently the clients that rely on it
 	// have heights 1 above the IAVL tree. Thus we return proof height + 1
-	return proof, clienttypes.NewHeight(revision, uint64(res.Height)+1)
+	if res.Height >= math.MaxInt64 {
+		panic("height exceeds maximum int64 value")
+	}
+	return proof, clienttypes.NewHeight(revision, uint64(res.Height+1))
 }
 
 // QueryUpgradeProof performs an abci query with the given key and returns the proto encoded merkle proof
@@ -243,8 +254,8 @@ func (chain *TestChain) QueryUpgradeProof(key []byte, height uint64) ([]byte, cl
 	if res.Height < 0 {
 		panic("negative height not allowed")
 	}
-	if res.Height+1 > math.MaxInt64 {
-		panic("height+1 exceeds maximum int64 value")
+	if res.Height >= math.MaxInt64 {
+		panic("height exceeds maximum int64 value")
 	}
 	// proof height + 1 is returned as the proof created corresponds to the height the proof
 	// was created in the IAVL tree. Tendermint and subsequently the clients that rely on it
@@ -432,7 +443,7 @@ func (chain *TestChain) ConstructUpdateTMClientHeader(counterparty *TestChain, c
 	return chain.ConstructUpdateTMClientHeaderWithTrustedHeight(counterparty, clientID, clienttypes.ZeroHeight())
 }
 
-// ConstructUpdateTMClientHeader will construct a valid 07-tendermint Header to update the
+// ConstructUpdateTMClientHeaderWithTrustedHeight will construct a valid 07-tendermint Header to update the
 // light client on the source chain.
 func (chain *TestChain) ConstructUpdateTMClientHeaderWithTrustedHeight(counterparty *TestChain, clientID string, trustedHeight clienttypes.Height) (*ibctmtypes.Header, error) {
 	header := counterparty.LastHeader
@@ -454,9 +465,8 @@ func (chain *TestChain) ConstructUpdateTMClientHeaderWithTrustedHeight(counterpa
 		// since the last trusted validators for a header at height h
 		// is the NextValidators at h+1 committed to in header h by
 		// NextValidatorsHash
-		// Ensure height can be safely converted to int64
-		if trustedHeight.RevisionHeight > uint64(math.MaxInt64-1) {
-			return nil, errors.Wrapf(ibctmtypes.ErrInvalidHeaderHeight, "trusted height exceeds maximum int64 value")
+		if trustedHeight.RevisionHeight >= math.MaxInt64-1 {
+			return nil, errors.Wrapf(ibctmtypes.ErrInvalidHeaderHeight, "trusted height revision height exceeds maximum int64 value")
 		}
 		tmTrustedVals, ok = counterparty.GetValsAtHeight(int64(trustedHeight.RevisionHeight + 1))
 		if !ok {

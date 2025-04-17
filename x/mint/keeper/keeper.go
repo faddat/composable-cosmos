@@ -76,7 +76,9 @@ func (k Keeper) GetMinter(ctx sdk.Context) (minter types.Minter) {
 		panic("stored minter should not have been nil")
 	}
 
-	k.cdc.MustUnmarshal(bz, &minter)
+	if err := k.cdc.Unmarshal(bz, &minter); err != nil {
+		panic(fmt.Sprintf("failed to unmarshal minter: %v", err))
+	}
 	return
 }
 
@@ -104,13 +106,16 @@ func (k Keeper) IsAllowedAddress(ctx sdk.Context, address string) bool {
 // SetParams sets the x/mint module parameters.
 func (k Keeper) SetParams(ctx sdk.Context, p types.Params) error {
 	if err := p.Validate(); err != nil {
-		return err
+		return fmt.Errorf("invalid params: %w", err)
 	}
 
 	store := ctx.KVStore(k.storeKey)
-	bz := k.cdc.MustMarshal(&p)
-	store.Set(types.ParamsKey, bz)
+	bz, err := k.cdc.Marshal(&p)
+	if err != nil {
+		return fmt.Errorf("failed to marshal params: %w", err)
+	}
 
+	store.Set(types.ParamsKey, bz)
 	return nil
 }
 
@@ -162,18 +167,19 @@ func (k Keeper) GetProvisionsFromBlock(ctx sdk.Context) (sdk.Coin, error) {
 func (k Keeper) BeginBlocker(ctx sdk.Context) {
 	provisions, err := k.GetProvisionsFromBlock(ctx)
 	if err != nil {
-		panic(fmt.Sprintf("failed to get provisions from block: %v", err))
+		k.Logger(ctx).Error("failed to get provisions from block", "error", err)
+		return
 	}
 
-	err = k.MintCoins(ctx, sdk.NewCoins(provisions))
-	if err != nil {
-		panic(fmt.Sprintf("failed to mint coins: %v", err))
+	if err := k.MintCoins(ctx, sdk.NewCoins(provisions)); err != nil {
+		k.Logger(ctx).Error("failed to mint coins", "error", err)
+		return
 	}
 
 	// send the minted coins to the fee collector account
-	err = k.DistributeMintedCoin(ctx, provisions)
-	if err != nil {
-		panic(fmt.Sprintf("failed to distribute minted coins: %v", err))
+	if err := k.DistributeMintedCoin(ctx, provisions); err != nil {
+		k.Logger(ctx).Error("failed to distribute minted coins", "error", err)
+		return
 	}
 }
 
