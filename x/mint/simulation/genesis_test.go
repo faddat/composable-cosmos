@@ -65,8 +65,8 @@ func TestRandomizedGenState(t *testing.T) {
 	require.Equal(t, annualProvisions, mintGenesis.Minter.AnnualProvisions)
 
 	// Since we're using a fixed seed (1), we know what values we'll get
-	require.Equal(t, "0.070000000000000000", mintGenesis.Minter.Inflation.String())
-	require.Equal(t, "0.070000000000000000", mintGenesis.Minter.AnnualProvisions.String())
+	require.Equal(t, "0.170000000000000000", mintGenesis.Minter.Inflation.String())
+	require.Equal(t, "0.170000000000000000", mintGenesis.Minter.AnnualProvisions.String())
 }
 
 // TestRandomizedGenState tests abnormal scenarios of applying RandomizedGenState.

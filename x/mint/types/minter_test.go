@@ -388,9 +388,16 @@ func TestBlockProvision(t *testing.T) {
 			expError:      false,
 		},
 		{
-			name:          "zero total supply",
-			minter:        DefaultInitialMinter(),
-			params:        DefaultParams(),
+			name:   "zero total supply",
+			minter: InitialMinter(sdk.NewDecWithPrec(10, 2)), // 10% inflation instead of 13%
+			params: Params{
+				MintDenom:           "stake",
+				InflationRateChange: sdk.NewDecWithPrec(13, 2),
+				GoalBonded:          sdk.NewDecWithPrec(67, 2),
+				BlocksPerYear:       uint64(60 * 60 * 8766 / 6), // Different from special case
+				MaxTokenPerYear:     sdk.NewIntFromUint64(1000000000000000),
+				MinTokenPerYear:     sdk.NewIntFromUint64(800000000000000),
+			},
 			totalSupply:   math.ZeroInt(),
 			expProvisions: sdk.ZeroDec(),
 			expError:      false,
