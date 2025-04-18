@@ -33,7 +33,7 @@ func NewMsgServerImpl(ibcKeeper Keeper, bankKeeper custombankkeeper.Keeper) type
 // If the transfer amount is greater than the minimum fee, it will charge the minimum fee and the percentage fee.
 func (k msgServer) Transfer(goCtx context.Context, msg *types.MsgTransfer) (*types.MsgTransferResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	params := k.Keeper.IbcTransfermiddleware.GetParams(ctx)
+	params := k.IbcTransfermiddleware.GetParams(ctx)
 	charge_coin := sdk.NewCoin(msg.Token.Denom, sdkmath.ZeroInt())
 	if params.ChannelFees != nil && len(params.ChannelFees) > 0 {
 		channelFee := findChannelParams(params.ChannelFees, msg.SourceChannel)

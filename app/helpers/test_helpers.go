@@ -55,7 +55,7 @@ type EmptyAppOptions struct{}
 func (EmptyAppOptions) Get(_ string) interface{} { return nil }
 
 func NewContextForApp(app composable.ComposableApp) sdk.Context {
-	ctx := app.BaseApp.NewContext(false)
+	ctx := app.NewContext(false)
 	return ctx
 }
 

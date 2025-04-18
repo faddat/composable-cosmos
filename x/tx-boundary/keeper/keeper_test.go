@@ -21,7 +21,7 @@ type KeeperTestSuite struct {
 
 func (suite *KeeperTestSuite) SetupTest() {
 	suite.app = helpers.SetupComposableAppWithValSet(suite.T())
-	suite.ctx = suite.app.BaseApp.NewContext(false)
+	suite.ctx = suite.app.NewContext(false)
 }
 
 func TestKeeperTestSuite(t *testing.T) {

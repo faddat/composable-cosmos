@@ -587,7 +587,7 @@ func NewComposableApp(
 		if err := app.LoadLatestVersion(); err != nil {
 			tmos.Exit(err.Error())
 		}
-		ctx := app.BaseApp.NewUncachedContext(true, tmproto.Header{})
+		ctx := app.NewUncachedContext(true, tmproto.Header{})
 		// Initialize pinned codes in wasmvm as they are not persisted there
 		if err := app.WasmKeeper.InitializePinnedCodes(ctx); err != nil {
 			tmos.Exit(fmt.Sprintf("failed initialize pinned codes %s", err))
@@ -687,12 +687,12 @@ func (app *ComposableApp) RegisterAPIRoutes(apiSvr *api.Server, _ config.APIConf
 
 // RegisterTxService implements the Application.RegisterTxService method.
 func (app *ComposableApp) RegisterTxService(clientCtx client.Context) {
-	authtx.RegisterTxService(app.BaseApp.GRPCQueryRouter(), clientCtx, app.BaseApp.Simulate, app.interfaceRegistry)
+	authtx.RegisterTxService(app.GRPCQueryRouter(), clientCtx, app.Simulate, app.interfaceRegistry)
 }
 
 // RegisterTendermintService implements the Application.RegisterTendermintService method.
 func (app *ComposableApp) RegisterTendermintService(clientCtx client.Context) {
-	cmtservice.RegisterTendermintService(clientCtx, app.BaseApp.GRPCQueryRouter(), app.interfaceRegistry, app.Query)
+	cmtservice.RegisterTendermintService(clientCtx, app.GRPCQueryRouter(), app.interfaceRegistry, app.Query)
 }
 
 // RegisterNodeService registers the node gRPC Query service.

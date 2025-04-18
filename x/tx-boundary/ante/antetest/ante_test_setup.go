@@ -42,7 +42,7 @@ type AnteTestSuite struct {
 
 func (suite *AnteTestSuite) SetupTest() {
 	suite.app, suite.delegator, suite.validators = helpers.SetupComposableAppWithValSetWithGenAccout(suite.T())
-	suite.ctx = suite.app.BaseApp.NewContextLegacy(false, tmproto.Header{Height: 1, ChainID: "centauri-1", Time: time.Now().UTC()})
+	suite.ctx = suite.app.NewContextLegacy(false, tmproto.Header{Height: 1, ChainID: "centauri-1", Time: time.Now().UTC()})
 	app.FundAccount(suite.app.BankKeeper, suite.ctx, suite.delegator, BaseBalance)
 
 	encodingConfig := app.MakeEncodingConfig()
