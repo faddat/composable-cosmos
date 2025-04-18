@@ -3,6 +3,7 @@ package ibctesting
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -170,6 +171,10 @@ func NewTestChain(t *testing.T, coord *Coordinator, appFactory ChainAppFactory, 
 	// generate genesis accounts
 	for i := 0; i < MaxAccounts; i++ {
 		senderPrivKey := secp256k1.GenPrivKey()
+		// Ensure i is within uint64 bounds
+		if i < 0 || i > math.MaxInt {
+			panic("account index out of bounds")
+		}
 		acc := authtypes.NewBaseAccount(senderPrivKey.PubKey().Address().Bytes(), senderPrivKey.PubKey(), uint64(i), 0)
 		amount, ok := sdkmath.NewIntFromString("10000000000000000000")
 		require.True(t, ok)
@@ -242,13 +247,56 @@ func (chain *TestChain) GetContext() sdk.Context {
 // QueryProof performs an abci query with the given key and returns the proto encoded merkle proof
 // for the query and the height at which the proof will succeed on a tendermint verifier.
 func (chain *TestChain) QueryProof(key []byte) ([]byte, clienttypes.Height) {
-	return chain.QueryProofAtHeight(key, chain.App.LastBlockHeight())
+	res, err := chain.App.Query(context.TODO(), &abci.RequestQuery{
+		Path:  fmt.Sprintf("store/%s/key", exported.StoreKey),
+		Data:  key,
+		Prove: true,
+	})
+	require.NoError(chain.t, err)
+
+	merkleProof, err := commitmenttypes.ConvertProofs(res.ProofOps)
+	require.NoError(chain.t, err)
+
+	proof, err := chain.App.AppCodec().Marshal(&merkleProof)
+	require.NoError(chain.t, err)
+
+	revision := clienttypes.ParseChainID(chain.ChainID)
+
+	// Ensure height is within uint64 bounds
+	if res.Height < 0 || res.Height > math.MaxInt {
+		panic("height out of bounds")
+	}
+	return proof, clienttypes.NewHeight(revision, uint64(res.Height)+1)
 }
 
-// QueryProof performs an abci query with the given key and returns the proto encoded merkle proof
+// QueryProofAtHeight performs an abci query with the given key and returns the proto encoded merkle proof
 // for the query and the height at which the proof will succeed on a tendermint verifier.
-func (chain *TestChain) QueryProofAtHeight(key []byte, height int64) ([]byte, clienttypes.Height) {
-	return chain.QueryProofForStore(exported.StoreKey, key, height)
+func (chain *TestChain) QueryProofAtHeight(key []byte, height uint64) ([]byte, clienttypes.Height) {
+	// Ensure height is within int64 bounds
+	if height > math.MaxInt64 {
+		height = math.MaxInt64
+	}
+	res, err := chain.App.Query(context.TODO(), &abci.RequestQuery{
+		Path:   fmt.Sprintf("store/%s/key", exported.StoreKey),
+		Height: int64(height - 1),
+		Data:   key,
+		Prove:  true,
+	})
+	require.NoError(chain.t, err)
+
+	merkleProof, err := commitmenttypes.ConvertProofs(res.ProofOps)
+	require.NoError(chain.t, err)
+
+	proof, err := chain.App.AppCodec().Marshal(&merkleProof)
+	require.NoError(chain.t, err)
+
+	revision := clienttypes.ParseChainID(chain.ChainID)
+
+	// Ensure height is within bounds
+	if res.Height < 0 {
+		panic("height cannot be negative")
+	}
+	return proof, clienttypes.NewHeight(revision, uint64(res.Height+1))
 }
 
 // QueryProofForStore performs an abci query with the given key and returns the proto encoded merkle proof
@@ -644,6 +692,10 @@ func (chain *TestChain) ConstructUpdateTMClientHeaderWithTrustedHeight(counterpa
 		// since the last trusted validators for a header at height h
 		// is the NextValidators at h+1 committed to in header h by
 		// NextValidatorsHash
+		// Ensure height is within int64 bounds
+		if trustedHeight.RevisionHeight >= math.MaxInt64-1 {
+			return nil, errors.Wrapf(ibctmtypes.ErrInvalidHeaderHeight, "revision height too large: %d", trustedHeight.RevisionHeight)
+		}
 		tmTrustedVals, ok = counterparty.GetValsAtHeight(int64(trustedHeight.RevisionHeight + 1))
 		if !ok {
 			return nil, errors.Wrapf(ibctmtypes.ErrInvalidHeaderHeight, "could not retrieve trusted validators at trustedHeight: %d", trustedHeight)

@@ -36,11 +36,30 @@ func SimulateMsgUpdateParams(r *rand.Rand, _ sdk.Context, _ []simtypes.Account) 
 	var authority sdk.AccAddress = address.Module("gov")
 
 	params := types.DefaultParams()
-	params.BlocksPerYear = uint64(simtypes.RandIntBetween(r, 1, 60*60*8766))
+
+	// Generate values within safe bounds for uint64
+	maxUint32 := uint64(^uint32(0))
+	blocksPerYear := uint64(r.Int63n(int64(maxUint32)))
+	if blocksPerYear == 0 {
+		blocksPerYear = 1
+	}
+	params.BlocksPerYear = blocksPerYear
+
 	params.GoalBonded = sdkmath.LegacyNewDecWithPrec(int64(simtypes.RandIntBetween(r, 0, 100)), 2)
 	params.InflationRateChange = sdkmath.LegacyNewDecWithPrec(int64(simtypes.RandIntBetween(r, 1, 20)), 2)
-	params.MaxTokenPerYear = sdkmath.NewIntFromUint64(uint64(simtypes.RandIntBetween(r, 1000000000000000, 100000000000000000)))
-	params.MinTokenPerYear = sdkmath.NewIntFromUint64(uint64(simtypes.RandIntBetween(r, 1, 1000000000000000)))
+
+	// Use safe bounds for token amounts
+	maxToken := r.Int63n(100000000000000000)
+	if maxToken == 0 {
+		maxToken = 1000000000000000
+	}
+	params.MaxTokenPerYear = sdkmath.NewInt(maxToken)
+
+	minToken := r.Int63n(1000000000000000)
+	if minToken == 0 {
+		minToken = 1
+	}
+	params.MinTokenPerYear = sdkmath.NewInt(minToken)
 	params.MintDenom = simtypes.RandStringOfLength(r, 10)
 
 	return &types.MsgUpdateParams{
